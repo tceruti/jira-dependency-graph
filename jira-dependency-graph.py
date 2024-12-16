@@ -11,7 +11,7 @@ import requests
 from functools import reduce
 
 GOOGLE_CHART_URL = 'https://chart.apis.google.com/chart'
-MAX_SUMMARY_LENGTH = 30
+MAX_SUMMARY_LENGTH = 50
 
 
 def log(*args):
@@ -99,8 +99,8 @@ def build_graph_data(start_issue_key, jira, excludes, ignores, show_directions, 
         # log('node ' + issue_key + ' status = ' + str(status))
 
         if islink:
-            return '"{}\\n({})"'.format(issue_key, summary)
-        return '"{}\\n({})" [href="{}", fillcolor="{}", style=filled]'.format(issue_key, summary, jira.get_issue_uri(issue_key), get_status_color(status))
+            return '"{}\\n{}"'.format(issue_key, summary)
+        return '"{}\\n{}" [href="{}", fillcolor="{}", style=filled]'.format(issue_key, summary, jira.get_issue_uri(issue_key), get_status_color(status))
 
     def process_link(fields, issue_key, link):
         if 'outwardIssue' in link:
@@ -172,28 +172,28 @@ def build_graph_data(start_issue_key, jira, excludes, ignores, show_directions, 
             log('Skipping ' + issue_key + ' - not traversing to a different project')
             return graph
 
-        graph.append(create_node_text(issue_key, fields, islink=False))
+        if fields['issuetype']['name'] != 'Epic':
+            graph.append(create_node_text(issue_key, fields, islink=False))
 
-        if not ignore_subtasks:
-            if fields['issuetype']['name'] == 'Epic' and not ignore_epic:
-                issues = jira.query('"Epic Link" = "%s"' % issue_key)
-                for subtask in issues:
-                    subtask_key = get_key(subtask)
-                    log(subtask_key + ' => references epic => ' + issue_key)
-                    node = '{}->{}[color=orange]'.format(
+        if fields['issuetype']['name'] == 'Epic' and not ignore_epic:
+            issues = jira.query('"Epic Link" = "%s"' % issue_key)
+            for subtask in issues:
+                subtask_key = get_key(subtask)
+                log(subtask_key + ' => references epic => ' + issue_key)
+                # node = '{}->{}[color=orange]'.format(
+                #     create_node_text(issue_key, fields),
+                #     create_node_text(subtask_key, subtask['fields']))
+                # graph.append(node)
+                children.append(subtask_key)
+        if 'subtasks' in fields and not ignore_subtasks:
+            for subtask in fields['subtasks']:
+                subtask_key = get_key(subtask)
+                log(issue_key + ' => has subtask => ' + subtask_key)
+                node = '{}->{}[color=blue][label="subtask"]'.format (
                         create_node_text(issue_key, fields),
                         create_node_text(subtask_key, subtask['fields']))
-                    graph.append(node)
-                    children.append(subtask_key)
-            if 'subtasks' in fields and not ignore_subtasks:
-                for subtask in fields['subtasks']:
-                    subtask_key = get_key(subtask)
-                    log(issue_key + ' => has subtask => ' + subtask_key)
-                    node = '{}->{}[color=blue][label="subtask"]'.format (
-                            create_node_text(issue_key, fields),
-                            create_node_text(subtask_key, subtask['fields']))
-                    graph.append(node)
-                    children.append(subtask_key)
+                graph.append(node)
+                children.append(subtask_key)
 
         if 'issuelinks' in fields:
             for other_link in fields['issuelinks']:
@@ -232,7 +232,15 @@ def create_graph_image(graph_data, image_file, node_shape):
 
 
 def print_graph(graph_data, node_shape):
-    print('digraph{\nnode [shape=' + node_shape +'];\n\n%s\n}' % ';\n'.join(graph_data))
+
+    from urllib.parse import quote
+
+    graph_data = 'digraph{\nnode [shape=' + node_shape +'];\n\n%s\n}' % ';\n'.join(graph_data)
+    print(graph_data)
+
+    url = 'https://quickchart.io/graphviz?graph=' + quote(graph_data)
+
+    print(url)
 
 
 def parse_args():

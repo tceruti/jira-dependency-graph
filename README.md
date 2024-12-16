@@ -37,7 +37,11 @@ $ docker build -t jira .
 $ docker run -v $PWD/out:/out jira python jira-dependency-graph.py --user=your-jira-username --password=your-jira-password --jira=url-of-your-jira-site --file=/out/output.png issue-key
 ```
 
+Typical usage for Zerofox milestone's
+```bash
+ocker run -v $PWD/out:/out jira python jira-dependency-graph.py --user=xxx@zerofox.com --password=<jira_token> --jira=https://zf.atlassian.net/ --local --ignore-subtasks --directions=outward --ignore-link="split to" --word-wrap <jira_milestone_ref>
 ```
+
 # e.g.:
 $ python jira-dependency-graph.py --user=pawelrychlik --password=s3cr3t --jira=https://your-company.jira.com JIRATICKET-718
 
