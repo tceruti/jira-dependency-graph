@@ -1,1 +1,2 @@
 requests ~= 2.22
+pydot ~= 1.4.2

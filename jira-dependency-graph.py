@@ -6,6 +6,8 @@ import argparse
 import getpass
 import sys
 import textwrap
+import pydot
+import datetime
 
 import requests
 from functools import reduce
@@ -67,7 +69,7 @@ class JiraSearch(object):
 
 
 def build_graph_data(start_issue_key, jira, excludes, ignores, show_directions, directions, includes, issue_excludes,
-                     ignore_closed, ignore_epic, ignore_subtasks, traverse, word_wrap):
+                     ignore_closed, ignore_epic, ignore_subtasks, traverse, word_wrap, outputDir):
     """ Given a starting image key and the issue-fetching function build up the GraphViz data representing relationships
         between issues. This will consider both subtasks and issue links.
     """
@@ -98,9 +100,7 @@ def build_graph_data(start_issue_key, jira, excludes, ignores, show_directions, 
         summary = summary.replace('"', '\\"')
         # log('node ' + issue_key + ' status = ' + str(status))
 
-        if islink:
-            return '"{}\\n{}"'.format(issue_key, summary)
-        return '"{}\\n{}" [href="{}", fillcolor="{}", style=filled]'.format(issue_key, summary, jira.get_issue_uri(issue_key), get_status_color(status))
+        return pydot.Node(issue_key, label=summary, fillcolor=get_status_color(status), style='filled', href=jira.get_issue_uri(issue_key))
 
     def process_link(fields, issue_key, link):
         if 'outwardIssue' in link:
@@ -146,11 +146,7 @@ def build_graph_data(start_issue_key, jira, excludes, ignores, show_directions, 
         if direction not in show_directions:
             node = None
         else:
-            # log("Linked issue summary " + linked_issue['fields']['summary'])
-            node = '{}->{}[label="{}"{}]'.format(
-                create_node_text(issue_key, fields),
-                create_node_text(linked_issue_key, linked_issue['fields']),
-                link_type, extra)
+            node = pydot.Edge(issue_key, linked_issue_key, label=link_type, color='red' if link_type == "blocks" else "black")
 
         return linked_issue_key, node
 
@@ -173,26 +169,22 @@ def build_graph_data(start_issue_key, jira, excludes, ignores, show_directions, 
             return graph
 
         if fields['issuetype']['name'] != 'Epic':
-            graph.append(create_node_text(issue_key, fields, islink=False))
+            graph.add_node(create_node_text(issue_key, fields, islink=False))
 
         if fields['issuetype']['name'] == 'Epic' and not ignore_epic:
             issues = jira.query('"Epic Link" = "%s"' % issue_key)
             for subtask in issues:
                 subtask_key = get_key(subtask)
                 log(subtask_key + ' => references epic => ' + issue_key)
-                # node = '{}->{}[color=orange]'.format(
-                #     create_node_text(issue_key, fields),
-                #     create_node_text(subtask_key, subtask['fields']))
-                # graph.append(node)
                 children.append(subtask_key)
         if 'subtasks' in fields and not ignore_subtasks:
             for subtask in fields['subtasks']:
                 subtask_key = get_key(subtask)
                 log(issue_key + ' => has subtask => ' + subtask_key)
-                node = '{}->{}[color=blue][label="subtask"]'.format (
-                        create_node_text(issue_key, fields),
-                        create_node_text(subtask_key, subtask['fields']))
-                graph.append(node)
+
+                graph.add_node(create_node_text(subtask_key, subtask['fields'], islink=False))
+                graph.add_edge(pydot.Edge(issue_key, subtask_key, color='blue', label='subtask'))
+
                 children.append(subtask_key)
 
         if 'issuelinks' in fields:
@@ -202,14 +194,24 @@ def build_graph_data(start_issue_key, jira, excludes, ignores, show_directions, 
                     log('Appending ' + result[0])
                     children.append(result[0])
                     if result[1] is not None:
-                        graph.append(result[1])
+                        graph.add_edge(result[1])
         # now construct graph data for all subtasks and links of this issue
         for child in (x for x in children if x not in seen):
             walk(child, graph)
         return graph
 
     project_prefix = start_issue_key.split('-', 1)[0]
-    return walk(start_issue_key, [])
+
+    graph = pydot.Dot(start_issue_key, graph_type='digraph', shape='box')
+    walk(start_issue_key, graph)
+
+    print(graph.to_string())
+    outputFile = '{}/{}_{}'.format(outputDir, start_issue_key , datetime.datetime.now().strftime("%Y-%m-%d"))
+
+    print("Writing to " + outputFile+".png")
+    graph.write_png(outputFile+".png")
+    print("Writing to " + outputFile+".pdf")
+    graph.write_pdf(outputFile+".pdf")
 
 
 def create_graph_image(graph_data, image_file, node_shape):
@@ -249,6 +251,7 @@ def parse_args():
     parser.add_argument('-p', '--password', dest='password', default=None, help='Password to access JIRA')
     parser.add_argument('-c', '--cookie', dest='cookie', default=None, help='JSESSIONID session cookie value')
     parser.add_argument('-b', '--bearer', dest='bearer', default=None, help='Bearer Token (Personal Access Token)')
+    parser.add_argument('-o', '--output', dest='outputDir', default='out', help='Output directory')
     parser.add_argument('-N', '--no-auth', dest='no_auth', action='store_true', default=False, help='Use no authentication')
     parser.add_argument('-j', '--jira', dest='jira_url', default='http://jira.example.com', help='JIRA Base URL (with protocol)')
     parser.add_argument('-f', '--file', dest='image_file', default='issue_graph.png', help='Filename to write image to')
@@ -304,16 +307,11 @@ def main():
     if options.jql_query is not None:
         options.issues.extend(jira.list_ids(options.jql_query))
 
-    graph = []
+    options.issues = sorted(set(options.issues))
     for issue in options.issues:
-        graph = graph + build_graph_data(issue, jira, options.excludes, options.ignores, options.show_directions, options.directions,
+        build_graph_data(issue, jira, options.excludes, options.ignores, options.show_directions, options.directions,
                                          options.includes, options.issue_excludes, options.closed, options.ignore_epic,
-                                         options.ignore_subtasks, options.traverse, options.word_wrap)
-
-    if options.local:
-        print_graph(filter_duplicates(graph), options.node_shape)
-    else:
-        create_graph_image(filter_duplicates(graph), options.image_file, options.node_shape)
+                                         options.ignore_subtasks, options.traverse, options.word_wrap, options.outputDir)
 
 
 if __name__ == '__main__':

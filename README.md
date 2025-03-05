@@ -39,7 +39,7 @@ $ docker run -v $PWD/out:/out jira python jira-dependency-graph.py --user=your-j
 
 Typical usage for Zerofox milestone's
 ```bash
-ocker run -v $PWD/out:/out jira python jira-dependency-graph.py --user=xxx@zerofox.com --password=<jira_token> --jira=https://zf.atlassian.net/ --local --ignore-subtasks --directions=outward --ignore-link="split to" --word-wrap <jira_milestone_ref>
+docker run -v $PWD/out:/out jira python jira-dependency-graph.py --user=xxx@zerofox.com --password=<jira_token> --jira=https://zf.atlassian.net/ --local --ignore-subtasks --directions=outward --ignore-link="split to" --output="/out" --word-wrap <jira_milestone_ref>
 ```
 
 # e.g.:
@@ -104,7 +104,7 @@ In order to only specify issues with a certain prefix pass in `--issue-include <
 
 ### Excluding Issues
 
-By passing in `--issue-exclude`, or `-xi` the system will explicitly ignore the ticket. It can be repeated multiple times, e.g. `-xi MYPR-456 -x MYPR-999` to ignore both issues. 
+By passing in `--issue-exclude`, or `-xi` the system will explicitly ignore the ticket. It can be repeated multiple times, e.g. `-xi MYPR-456 -x MYPR-999` to ignore both issues.
 Use it as a last-resort only, when other means of exclusion do not suit your case, e.g. to omit a part of the graph for better readability.
 
 ### Authentication
